@@ -1,9 +1,9 @@
 #pragma once
-
 #include <QSGRenderNode>
 #include <QOpenGLShaderProgram>
 #include <QOpenGLBuffer>
 #include <QOpenGLTexture>
+#include <QOpenGLVertexArrayObject>
 #include <QImage>
 #include <QHash>
 #include <QSet>
@@ -50,6 +50,7 @@ private:
     QOpenGLTexture *textureFor(QHash<quint64, TexEntry> &cache, quint64 key, const QImage &img);
 
     QOpenGLShaderProgram *m_program = nullptr;
+    QOpenGLVertexArrayObject m_vao;          // FIX: нужен для Core Profile 3.3
     QOpenGLBuffer m_vbo{QOpenGLBuffer::VertexBuffer};
     QOpenGLBuffer m_ibo{QOpenGLBuffer::IndexBuffer};
     int m_indexCount = 0;
@@ -59,11 +60,12 @@ private:
 
     QVector<TileVisual> m_tiles;
     QMatrix4x4 m_viewProj;
-    qreal m_blend = 0.0;
+    qreal m_blend   = 0.0;
     qreal m_centerU = 0.5;
     qreal m_centerV = 0.5;
 
     static constexpr int kGridSegments = 16; // 17x17 вершин на тайл
+
 public:
     static constexpr double kGlobeRadius = 1.0;
 };

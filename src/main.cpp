@@ -3,7 +3,7 @@
 #include <QQuickWindow>
 #include <QSGRendererInterface>
 #include <QSurfaceFormat>
-
+#include <QStandardPaths>
 #include "MapView.h"
 
 int main(int argc, char *argv[])
@@ -13,6 +13,7 @@ int main(int argc, char *argv[])
     // через Direct3D/Metal/Vulkan, а QSGRenderNode здесь написан
     // в терминах прямых вызовов OpenGL).
     QQuickWindow::setGraphicsApi(QSGRendererInterface::OpenGL);
+
 
     QSurfaceFormat fmt;
     fmt.setVersion(3, 3);
@@ -25,6 +26,8 @@ int main(int argc, char *argv[])
     QGuiApplication app(argc, argv);
 
     qmlRegisterType<MapView>("MapGlobeApp", 1, 0, "MapView");
+
+    qDebug() << "AppData path:" << QStandardPaths::writableLocation(QStandardPaths::AppDataLocation);
 
     QQmlApplicationEngine engine;
     const QUrl url(QStringLiteral("qrc:/qml/main.qml"));
