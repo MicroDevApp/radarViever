@@ -36,8 +36,8 @@ MapView::MapView(QQuickItem *parent)
         "MapGlobeDemo/1.0 (+your-contact-here)",
         this);
 
-    connect(m_osmCache, &TileCache::tileReady, this, [this](int, int, int) { update(); });
-    connect(m_demCache, &TileCache::tileReady, this, [this](int, int, int) { update(); });
+    connect(m_osmCache, &TileCache::tileReady, this, [this](int, int, int) { refreshTiles(); });
+    connect(m_demCache, &TileCache::tileReady, this, [this](int, int, int) { refreshTiles(); });
 }
 
 MapView::~MapView() = default;
@@ -55,7 +55,7 @@ void MapView::setCenterLongitude(qreal lon)
     if (qFuzzyCompare(lon + 1.0, m_lon + 1.0)) return;
     m_lon = lon;
     emit centerChanged();
-    update();
+    refreshTiles();
 }
 
 void MapView::setCenterLatitude(qreal lat)
@@ -64,7 +64,7 @@ void MapView::setCenterLatitude(qreal lat)
     if (qFuzzyCompare(lat + 1.0, m_lat + 1.0)) return;
     m_lat = lat;
     emit centerChanged();
-    update();
+    refreshTiles();
 }
 
 void MapView::setZoomLevel(qreal z)
@@ -73,7 +73,7 @@ void MapView::setZoomLevel(qreal z)
     if (qFuzzyCompare(z + 1.0, m_zoom + 1.0)) return;
     m_zoom = z;
     emit zoomChanged();
-    update();
+    refreshTiles();
 }
 
 void MapView::panPixels(qreal dx, qreal dy)
@@ -96,19 +96,36 @@ void MapView::zoomBy(qreal delta)
 void MapView::geometryChange(const QRectF &newGeometry, const QRectF &oldGeometry)
 {
     QQuickItem::geometryChange(newGeometry, oldGeometry);
-    update();
+    refreshTiles();
 }
 
 QSGNode *MapView::updatePaintNode(QSGNode *oldNode, UpdatePaintNodeData *)
 {
+    // ВАЖНО: эта функция исполняется на render-потоке (QSGRenderThread),
+    // хотя GUI-поток на момент вызова заблокирован (sync-фаза). Поэтому
+    // здесь МОЖНО читать m_cached* (просто данные/QImage с atomic refcount),
+    // но НЕЛЬЗЯ дёргать TileCache/QNetworkAccessManager — те живут на
+    // GUI-потоке, и создание QObject (QNetworkReply) отсюда ловит варнинг
+    // "Cannot create children for a parent that is in a different thread"
+    // и фактически не работает (поэтому раньше был чёрный экран).
     auto *node = static_cast<MapRenderNode *>(oldNode);
     if (!node)
         node = new MapRenderNode();
 
+    node->setCamera(m_cachedViewProj, m_cachedBlend, m_cachedCenterU, m_cachedCenterV);
+    node->setTiles(m_cachedTiles);
+    return node;
+}
+
+void MapView::refreshTiles()
+{
+    // Сюда нельзя попасть не с GUI-потока: вызывается только из сеттеров
+    // свойств, geometryChange и слота TileCache::tileReady — все они
+    // гарантированно выполняются на GUI-потоке.
     const qreal w = width();
     const qreal h = height();
     if (w <= 0 || h <= 0)
-        return node;
+        return;
 
     const int tileZ = int(std::floor(qBound(kMinZoom, m_zoom, kMaxZoom)));
     const int tilesPerSide = 1 << tileZ;
@@ -142,7 +159,7 @@ QSGNode *MapView::updatePaintNode(QSGNode *oldNode, UpdatePaintNodeData *)
 
             QImage osmImg, demImg;
             if (!m_osmCache->tile(tileZ, wrappedX, ty, osmImg))
-                continue; // ещё не загружен — пропускаем кадр, перерисуется по tileReady
+                continue; // ещё не загружен — пропускаем, перерисуется по tileReady
             m_demCache->tile(tileZ, wrappedX, ty, demImg); // best-effort, рельеф необязателен
 
             TileVisual tv;
@@ -187,8 +204,11 @@ QSGNode *MapView::updatePaintNode(QSGNode *oldNode, UpdatePaintNodeData *)
     QMatrix4x4 proj;
     proj.perspective(45.0f, float(w / qMax(1.0, double(h))), 0.001f, 100.0f);
 
-    node->setCamera(proj * view, t, centerU, centerV);
-    node->setTiles(tiles);
+    m_cachedTiles = tiles;
+    m_cachedViewProj = proj * view;
+    m_cachedBlend = t;
+    m_cachedCenterU = centerU;
+    m_cachedCenterV = centerV;
 
-    return node;
+    update(); // просим Qt Quick перерисовать; реальные данные уже в m_cached*
 }

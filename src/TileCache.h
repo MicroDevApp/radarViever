@@ -33,8 +33,9 @@ signals:
     void tileReady(int z, int x, int y);
 
 private:
-    void loadFromDiskOrNetwork(int z, int x, int y);
+    void startNetworkRequest(int z, int x, int y);
     QString diskPath(int z, int x, int y) const;
+    void loadFromDiskOrNetwork(int z, int x, int y);
 
     QString m_layerName;
     QString m_urlTemplate;
